@@ -48,6 +48,12 @@ class ActNorm(nn.Module):
             self.inv_std.data.copy_(inv_std.data)
             self.is_initialized += 1.
 
+    def ldj(self, x):
+        ldj = self.inv_std.log().sum()
+        if self.per_channel:
+            ldj *= x.size(2) * x.size(3)
+        return ldj
+
     def forward(self, x, sldj=None, reverse=False):
         x = torch.cat(x, dim=self.cat_dim)
         if not self.is_initialized:
@@ -55,10 +61,10 @@ class ActNorm(nn.Module):
 
         if reverse:
             x = x / self.inv_std + self.mean
-            sldj = sldj - self.inv_std.log().sum()
+            sldj = sldj - self.ldj(x)
         else:
             x = (x - self.mean) * self.inv_std
-            sldj = sldj + self.inv_std.log().sum()
+            sldj = sldj + self.ldj(x)
 
         x = x.chunk(2, dim=self.cat_dim)
 
