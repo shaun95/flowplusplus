@@ -4,28 +4,9 @@ import torch.nn as nn
 from util import mean_dim
 
 
-class ActNorm(nn.Module):
-    """Activation Normalization as described in Flow++
-
-    When height = 1 and width = 1: Glow-style activation normalization.
-
-    When height > 1 or width > 1:
-    Normalizes every activation independently (note this differs from the variant
-    used in in Glow, where they normalize each channel). The mean and stddev get
-    initialized using the mean and stddev of the first mini-batch. After the
-    initialization, `mean` and `inv_std` become trainable parameters.
-
-    Adapted from:
-        > https://github.com/openai/glow
-    """
-    def __init__(self, norm_shape, return_ldj=True, cat_dim=1):
-        super(ActNorm, self).__init__()
-        if isinstance(norm_shape, tuple):
-            self.per_channel = False
-            num_channels, height, width = norm_shape
-        else:
-            self.per_channel = True
-            num_channels, height, width = norm_shape, 1, 1
+class _BaseNorm(nn.Module):
+    def __init__(self, num_channels, height, width, return_ldj=True, cat_dim=1):
+        super(_BaseNorm, self).__init__()
         if cat_dim == 1:
             num_channels *= 2
 
@@ -36,46 +17,100 @@ class ActNorm(nn.Module):
         self.eps = 1e-6
         self.return_ldj = return_ldj
         self.cat_dim = cat_dim
+        self.is_channelwise = (height == width == 1)
 
-    def init_params(self, x):
+    def initialize_parameters(self, x):
         if not self.training:
             return
 
         with torch.no_grad():
-            if self.per_channel:
-                mean = mean_dim(x.clone(), [0, 2, 3], keepdims=True)
-                var = mean_dim((x.clone() - mean) ** 2, [0, 2, 3], keepdims=True)
+            if self.is_channelwise:
+                mean = mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
+                var = mean_dim((x.clone() - mean) ** 2, dim=[0, 2, 3], keepdims=True)
+                inv_std = -torch.log(var.sqrt() + self.eps)
             else:
                 mean = torch.mean(x.clone(), dim=0, keepdim=True)
                 var = torch.mean((x.clone() - mean) ** 2, dim=0, keepdim=True)
-            inv_std = 1. / (var.sqrt() + self.eps)
+                inv_std = 1. / (var.sqrt() + self.eps)
+
             self.mean.data.copy_(mean.data)
             self.inv_std.data.copy_(inv_std.data)
             self.is_initialized += 1.
 
-    def ldj(self, x):
-        if self.per_channel:
-            ldj = self.inv_std.log().sum() * x.size(2) * x.size(3)
+    def _center(self, x, reverse=False):
+        if reverse:
+            return x + self.mean
         else:
-            ldj = self.inv_std.log().sum()
+            return x - self.mean
 
-        return ldj
+    def _scale(self, x, sldj, reverse=False):
+        raise NotImplementedError('Subclass of _BaseNorm must implement _scale')
 
-    def forward(self, x, sldj=None, reverse=False):
-        x = torch.cat(x, dim=self.cat_dim)
+    def forward(self, x, ldj=None, reverse=False):
         if not self.is_initialized:
-            self.init_params(x)
+            self.initialize_parameters(x)
 
         if reverse:
-            x = x / self.inv_std + self.mean
-            sldj = sldj - self.ldj(x)
+            x, ldj = self._scale(x, ldj, reverse)
+            x = self._center(x, reverse)
         else:
-            x = (x - self.mean) * self.inv_std
-            sldj = sldj + self.ldj(x)
-
-        x = x.chunk(2, dim=self.cat_dim)
+            x = self._center(x, reverse)
+            x, ldj = self._scale(x, ldj, reverse)
 
         if self.return_ldj:
-            return x, sldj
+            return x, ldj
 
         return x
+
+
+class ActNorm(_BaseNorm):
+    """Activation normalization for 2D inputs.
+
+    The bias and scale get initialized using the mean and variance of the
+    first mini-batch. After the init, bias and scale are trainable parameters.
+
+    Adapted from:
+        > https://github.com/openai/glow
+    """
+    def __init__(self, num_features, return_ldj=False, cat_dim=1):
+        super(ActNorm, self).__init__(num_features, 1, 1, return_ldj, cat_dim)
+
+    def _scale(self, x, sldj, reverse=False):
+        if reverse:
+            x = x * self.inv_std.mul(-1).exp()
+        else:
+            x = x * self.inv_std.exp()
+
+        if sldj is not None:
+            if reverse:
+                sldj = sldj - self.inv_std.sum() * x.size(2) * x.size(3)
+            else:
+                sldj = sldj + self.inv_std.sum() * x.size(2) * x.size(3)
+
+        return x, sldj
+
+
+class PixNorm(_BaseNorm):
+    """Activation Normalization as described in Flow++
+
+    Normalizes every activation independently (note this differs from the variant
+    used in in Glow, where they normalize each channel). The mean and stddev get
+    initialized using the mean and stddev of the first mini-batch. After the
+    initialization, `mean` and `inv_std` become trainable parameters.
+
+    Adapted from:
+        > https://github.com/openai/glow
+    """
+    def _scale(self, x, sldj, reverse=False):
+        if reverse:
+            x = x / self.inv_std
+        else:
+            x = x * self.inv_std
+
+        if sldj is not None:
+            if reverse:
+                sldj = sldj - self.inv_std.log().sum()
+            else:
+                sldj = sldj + self.inv_std.log().sum()
+
+        return x, sldj
