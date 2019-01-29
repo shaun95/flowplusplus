@@ -25,22 +25,13 @@ class _BaseNorm(nn.Module):
         self.eps = 1e-6
         self.return_ldj = return_ldj
         self.cat_dim = cat_dim
-        self.is_channelwise = (height == width == 1)
 
     def initialize_parameters(self, x):
         if not self.training:
             return
 
         with torch.no_grad():
-            if self.is_channelwise:
-                mean = mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
-                var = mean_dim((x.clone() - mean) ** 2, dim=[0, 2, 3], keepdims=True)
-                inv_std = -torch.log(var.sqrt() + self.eps)
-            else:
-                mean = torch.mean(x.clone(), dim=0, keepdim=True)
-                var = torch.mean((x.clone() - mean) ** 2, dim=0, keepdim=True)
-                inv_std = 1. / (var.sqrt() + self.eps)
-
+            mean, inv_std = self._get_moments(x)
             self.mean.data.copy_(mean.data)
             self.inv_std.data.copy_(inv_std.data)
             self.is_initialized += 1.
@@ -50,6 +41,9 @@ class _BaseNorm(nn.Module):
             return x + self.mean
         else:
             return x - self.mean
+
+    def _get_moments(self, x):
+        raise NotImplementedError('Subclass of _BaseNorm must implement _get_moments')
 
     def _scale(self, x, sldj, reverse=False):
         raise NotImplementedError('Subclass of _BaseNorm must implement _scale')
@@ -76,9 +70,18 @@ class ActNorm(_BaseNorm):
 
     The mean and inv_std get initialized using the mean and variance of the
     first mini-batch. After the init, mean and inv_std are trainable parameters.
+
+    Note: Parametrizes inv_std in log-space, rather than directly like PixNorm.
     """
     def __init__(self, num_features, return_ldj=False, cat_dim=1):
         super(ActNorm, self).__init__(num_features, 1, 1, return_ldj, cat_dim)
+
+    def _get_moments(self, x):
+        mean = mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
+        var = mean_dim((x.clone() - mean) ** 2, dim=[0, 2, 3], keepdims=True)
+        inv_std = -torch.log(var.sqrt() + self.eps)
+
+        return mean, inv_std
 
     def _scale(self, x, sldj, reverse=False):
         if reverse:
@@ -102,7 +105,16 @@ class PixNorm(_BaseNorm):
     used in in Glow, where they normalize each channel). The mean and stddev get
     initialized using the mean and stddev of the first mini-batch. After the
     initialization, `mean` and `inv_std` become trainable parameters.
+
+    Note: Parametrizes inv_std directly, rather than in log-space like ActNorm.
     """
+    def _get_moments(self, x):
+        mean = torch.mean(x.clone(), dim=0, keepdim=True)
+        var = torch.mean((x.clone() - mean) ** 2, dim=0, keepdim=True)
+        inv_std = 1. / (var.sqrt() + self.eps)
+
+        return mean, inv_std
+
     def _scale(self, x, sldj, reverse=False):
         if reverse:
             x = x / self.inv_std
