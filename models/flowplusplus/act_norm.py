@@ -67,8 +67,6 @@ class ActNorm(_BaseNorm):
 
     The mean and inv_std get initialized using the mean and variance of the
     first mini-batch. After the init, mean and inv_std are trainable parameters.
-
-    Note: Parametrizes inv_std in log-space, rather than directly like PixNorm.
     """
     def __init__(self, num_channels):
         super(ActNorm, self).__init__(num_channels, 1, 1)
@@ -76,21 +74,17 @@ class ActNorm(_BaseNorm):
     def _get_moments(self, x):
         mean = mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
         var = mean_dim((x.clone() - mean) ** 2, dim=[0, 2, 3], keepdims=True)
-        inv_std = -torch.log(var.sqrt() + self.eps)
+        inv_std = 1. / (var.sqrt() + self.eps)
 
         return mean, inv_std
 
     def _scale(self, x, sldj, reverse=False):
         if reverse:
-            x = x * self.inv_std.mul(-1).exp()
+            x = x / self.inv_std
+            sldj = sldj - self.inv_std.log().sum() * x.size(2) * x.size(3)
         else:
-            x = x * self.inv_std.exp()
-
-        if sldj is not None:
-            if reverse:
-                sldj = sldj - self.inv_std.sum() * x.size(2) * x.size(3)
-            else:
-                sldj = sldj + self.inv_std.sum() * x.size(2) * x.size(3)
+            x = x * self.inv_std
+            sldj = sldj + self.inv_std.log().sum() * x.size(2) * x.size(3)
 
         return x, sldj
 
@@ -102,8 +96,6 @@ class PixNorm(_BaseNorm):
     used in in Glow, where they normalize each channel). The mean and stddev get
     initialized using the mean and stddev of the first mini-batch. After the
     initialization, `mean` and `inv_std` become trainable parameters.
-
-    Note: Parametrizes inv_std directly, rather than in log-space like ActNorm.
     """
     def _get_moments(self, x):
         mean = torch.mean(x.clone(), dim=0, keepdim=True)
@@ -115,13 +107,9 @@ class PixNorm(_BaseNorm):
     def _scale(self, x, sldj, reverse=False):
         if reverse:
             x = x / self.inv_std
+            sldj = sldj - self.inv_std.log().sum()
         else:
             x = x * self.inv_std
-
-        if sldj is not None:
-            if reverse:
-                sldj = sldj - self.inv_std.log().sum()
-            else:
-                sldj = sldj + self.inv_std.log().sum()
+            sldj = sldj + self.inv_std.log().sum()
 
         return x, sldj
