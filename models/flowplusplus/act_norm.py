@@ -20,7 +20,7 @@ class ActNorm(nn.Module):
             num_channels *= 2
         self.register_buffer('is_initialized', torch.zeros(1))
         self.mean = nn.Parameter(torch.zeros(1, num_channels, height, width))
-        self.inv_std = nn.Parameter(torch.zeros(1, num_channels, height, width))
+        self.log_inv_std = nn.Parameter(torch.zeros(1, num_channels, height, width))
 
         self.eps = 1e-6
         self.return_ldj = return_ldj
@@ -33,9 +33,9 @@ class ActNorm(nn.Module):
         with torch.no_grad():
             mean = torch.mean(x.clone(), dim=0, keepdim=True)
             var = torch.mean((x.clone() - mean) ** 2, dim=0, keepdim=True)
-            inv_std = 1. / (var.sqrt() + self.eps)
+            log_inv_std = (var.sqrt() + self.eps).mul(-1).log()
             self.mean.data.copy_(mean.data)
-            self.inv_std.data.copy_(inv_std.data)
+            self.log_inv_std.data.copy_(log_inv_std.data)
             self.is_initialized += 1.
 
     def forward(self, x, sldj=None, reverse=False):
@@ -44,11 +44,11 @@ class ActNorm(nn.Module):
             self.init_params(x)
 
         if reverse:
-            x = x / self.inv_std + self.mean
-            sldj = sldj - self.inv_std.log().sum()
+            x = x * self.log_inv_std.mul(-1).exp() + self.mean
+            sldj = sldj - self.log_inv_std.sum()
         else:
-            x = (x - self.mean) * self.inv_std
-            sldj = sldj + self.inv_std.log().sum()
+            x = (x - self.mean) * self.log_inv_std.exp()
+            sldj = sldj + self.log_inv_std.sum()
 
         x = x.chunk(2, dim=self.cat_dim)
 
