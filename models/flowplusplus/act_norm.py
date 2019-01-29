@@ -20,9 +20,15 @@ class ActNorm(nn.Module):
     """
     def __init__(self, norm_shape, return_ldj=True, cat_dim=1):
         super(ActNorm, self).__init__()
-        num_channels, height, width = norm_shape
+        if isinstance(norm_shape, tuple):
+            self.per_channel = False
+            num_channels, height, width = norm_shape
+        else:
+            self.per_channel = True
+            num_channels, height, width = norm_shape, 1, 1
         if cat_dim == 1:
             num_channels *= 2
+
         self.register_buffer('is_initialized', torch.zeros(1))
         self.mean = nn.Parameter(torch.zeros(1, num_channels, height, width))
         self.inv_std = nn.Parameter(torch.zeros(1, num_channels, height, width))
@@ -30,7 +36,6 @@ class ActNorm(nn.Module):
         self.eps = 1e-6
         self.return_ldj = return_ldj
         self.cat_dim = cat_dim
-        self.per_channel = (height == 1 and width == 1)
 
     def init_params(self, x):
         if not self.training:
