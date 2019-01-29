@@ -5,6 +5,14 @@ from util import mean_dim
 
 
 class _BaseNorm(nn.Module):
+    """Base class for ActNorm (Glow) and PixNorm (Flow++).
+
+    The mean and inv_std get initialized using the mean and variance of the
+    first mini-batch. After the init, mean and inv_std are trainable parameters.
+
+    Adapted from:
+        > https://github.com/openai/glow
+    """
     def __init__(self, num_channels, height, width, return_ldj=True, cat_dim=1):
         super(_BaseNorm, self).__init__()
         if cat_dim == 1:
@@ -64,13 +72,10 @@ class _BaseNorm(nn.Module):
 
 
 class ActNorm(_BaseNorm):
-    """Activation normalization for 2D inputs.
+    """Activation Normalization used in Glow
 
-    The bias and scale get initialized using the mean and variance of the
-    first mini-batch. After the init, bias and scale are trainable parameters.
-
-    Adapted from:
-        > https://github.com/openai/glow
+    The mean and inv_std get initialized using the mean and variance of the
+    first mini-batch. After the init, mean and inv_std are trainable parameters.
     """
     def __init__(self, num_features, return_ldj=False, cat_dim=1):
         super(ActNorm, self).__init__(num_features, 1, 1, return_ldj, cat_dim)
@@ -91,15 +96,12 @@ class ActNorm(_BaseNorm):
 
 
 class PixNorm(_BaseNorm):
-    """Activation Normalization as described in Flow++
+    """Pixel-wise Activation Normalization used in Flow++
 
     Normalizes every activation independently (note this differs from the variant
     used in in Glow, where they normalize each channel). The mean and stddev get
     initialized using the mean and stddev of the first mini-batch. After the
     initialization, `mean` and `inv_std` become trainable parameters.
-
-    Adapted from:
-        > https://github.com/openai/glow
     """
     def _scale(self, x, sldj, reverse=False):
         if reverse:
