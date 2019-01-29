@@ -49,6 +49,7 @@ class _BaseNorm(nn.Module):
         raise NotImplementedError('Subclass of _BaseNorm must implement _scale')
 
     def forward(self, x, ldj=None, reverse=False):
+        x = torch.cat(x, dim=self.cat_dim)
         if not self.is_initialized:
             self.initialize_parameters(x)
 
@@ -58,6 +59,7 @@ class _BaseNorm(nn.Module):
         else:
             x = self._center(x, reverse)
             x, ldj = self._scale(x, ldj, reverse)
+        x = x.chunk(2, dim=self.cat_dim)
 
         if self.return_ldj:
             return x, ldj
