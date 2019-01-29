@@ -119,7 +119,7 @@ class _FlowStep(nn.Module):
         num_channelwise, num_checkerboard = scales[0]
         channels = []
         for i in range(num_channelwise):
-            channels += [ActNorm(in_channels // 2, in_height, in_width),
+            channels += [ActNorm((in_channels // 2, 1, 1)),
                          InvConv(in_channels // 2),
                          Coupling(in_channels=in_channels // 2,
                                   mid_channels=mid_channels,
@@ -130,7 +130,7 @@ class _FlowStep(nn.Module):
 
         checkers = []
         for i in range(num_checkerboard):
-            checkers += [ActNorm(in_channels, in_height, in_width // 2),
+            checkers += [ActNorm((in_channels, 1, 1)),
                          InvConv(in_channels),
                          Coupling(in_channels=in_channels,
                                   mid_channels=mid_channels,
@@ -220,7 +220,7 @@ class _Dequantization(nn.Module):
 
         flows = []
         for _ in range(num_flows):
-            flows += [ActNorm(in_channels, in_height, in_width // 2),
+            flows += [ActNorm((in_channels, 1, 1)),
                       InvConv(in_channels),
                       Coupling(in_channels, mid_channels, num_blocks,
                                num_components, drop_prob,
