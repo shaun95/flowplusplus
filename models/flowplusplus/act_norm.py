@@ -54,9 +54,11 @@ class ActNorm(nn.Module):
             self.is_initialized += 1.
 
     def ldj(self, x):
-        ldj = self.inv_std.log().sum()
         if self.per_channel:
-            ldj *= x.size(2) * x.size(3)
+            ldj = self.inv_std.log().sum() * x.size(2) * x.size(3)
+        else:
+            ldj = self.inv_std.log().sum()
+
         return ldj
 
     def forward(self, x, sldj=None, reverse=False):
