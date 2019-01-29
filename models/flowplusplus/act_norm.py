@@ -13,18 +13,16 @@ class _BaseNorm(nn.Module):
     Adapted from:
         > https://github.com/openai/glow
     """
-    def __init__(self, num_channels, height, width, return_ldj=True, cat_dim=1):
+    def __init__(self, num_channels, height, width):
         super(_BaseNorm, self).__init__()
-        if cat_dim == 1:
-            num_channels *= 2
+
+        # Input gets concatenated along channel axis
+        num_channels *= 2
 
         self.register_buffer('is_initialized', torch.zeros(1))
         self.mean = nn.Parameter(torch.zeros(1, num_channels, height, width))
         self.inv_std = nn.Parameter(torch.zeros(1, num_channels, height, width))
-
         self.eps = 1e-6
-        self.return_ldj = return_ldj
-        self.cat_dim = cat_dim
 
     def initialize_parameters(self, x):
         if not self.training:
@@ -49,7 +47,7 @@ class _BaseNorm(nn.Module):
         raise NotImplementedError('Subclass of _BaseNorm must implement _scale')
 
     def forward(self, x, ldj=None, reverse=False):
-        x = torch.cat(x, dim=self.cat_dim)
+        x = torch.cat(x, dim=1)
         if not self.is_initialized:
             self.initialize_parameters(x)
 
@@ -59,12 +57,9 @@ class _BaseNorm(nn.Module):
         else:
             x = self._center(x, reverse)
             x, ldj = self._scale(x, ldj, reverse)
-        x = x.chunk(2, dim=self.cat_dim)
+        x = x.chunk(2, dim=1)
 
-        if self.return_ldj:
-            return x, ldj
-
-        return x
+        return x, ldj
 
 
 class ActNorm(_BaseNorm):
@@ -75,8 +70,8 @@ class ActNorm(_BaseNorm):
 
     Note: Parametrizes inv_std in log-space, rather than directly like PixNorm.
     """
-    def __init__(self, num_features, return_ldj=False, cat_dim=1):
-        super(ActNorm, self).__init__(num_features, 1, 1, return_ldj, cat_dim)
+    def __init__(self, num_channels):
+        super(ActNorm, self).__init__(num_channels, 1, 1)
 
     def _get_moments(self, x):
         mean = mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
