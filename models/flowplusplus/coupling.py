@@ -1,6 +1,6 @@
 import torch.nn as nn
-import models.flowplusplus.log_dist as logistic
 
+from models.flowplusplus import log_dist as logistic
 from models.flowplusplus.nn import NN
 
 
