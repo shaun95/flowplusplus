@@ -19,7 +19,6 @@ class Coupling(nn.Module):
     def __init__(self, in_channels, mid_channels, num_blocks, num_components, drop_prob,
                  use_attn=True, aux_channels=None):
         super(Coupling, self).__init__()
-
         self.nn = NN(in_channels, mid_channels, num_blocks, num_components, drop_prob, use_attn, aux_channels)
 
     def forward(self, x, sldj=None, reverse=False, aux=None):
