@@ -36,6 +36,7 @@ class FlowPlusPlus(nn.Module):
                  num_blocks=10,
                  num_dequant_blocks=2,
                  num_components=32,
+                 use_attn=True,
                  drop_prob=0.2):
         super(FlowPlusPlus, self).__init__()
         # Register bounds to pre-process images, not learnable
@@ -44,6 +45,7 @@ class FlowPlusPlus(nn.Module):
             self.dequant_flows = _Dequantization(in_shape=in_shape,
                                                  mid_channels=mid_channels,
                                                  num_blocks=num_dequant_blocks,
+                                                 use_attn=use_attn,
                                                  drop_prob=drop_prob)
         else:
             self.dequant_flows = None
@@ -52,6 +54,7 @@ class FlowPlusPlus(nn.Module):
                                mid_channels=mid_channels,
                                num_blocks=num_blocks,
                                num_components=num_components,
+                               use_attn=use_attn,
                                drop_prob=drop_prob)
 
     def forward(self, x, reverse=False):
@@ -111,9 +114,10 @@ class _FlowStep(nn.Module):
         num_blocks (int): Number of residual blocks in the s and t network of
             `Coupling` layers.
         num_components (int): Number of components in the mixture.
+        use_attn (bool): Use attention in the coupling layers.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, scales, in_shape, mid_channels, num_blocks, num_components, drop_prob):
+    def __init__(self, scales, in_shape, mid_channels, num_blocks, num_components, use_attn, drop_prob):
         super(_FlowStep, self).__init__()
         in_channels, in_height, in_width = in_shape
         num_channelwise, num_checkerboard = scales[0]
@@ -125,6 +129,7 @@ class _FlowStep(nn.Module):
                                   mid_channels=mid_channels,
                                   num_blocks=num_blocks,
                                   num_components=num_components,
+                                  use_attn=use_attn,
                                   drop_prob=drop_prob),
                          Flip()]
 
@@ -136,6 +141,7 @@ class _FlowStep(nn.Module):
                                   mid_channels=mid_channels,
                                   num_blocks=num_blocks,
                                   num_components=num_components,
+                                  use_attn=use_attn,
                                   drop_prob=drop_prob),
                          Flip()]
         self.channels = nn.ModuleList(channels) if channels else None
@@ -150,6 +156,7 @@ class _FlowStep(nn.Module):
                                   mid_channels=mid_channels,
                                   num_blocks=num_blocks,
                                   num_components=num_components,
+                                  use_attn=use_attn,
                                   drop_prob=drop_prob)
 
     def forward(self, x, sldj, reverse=False):
@@ -203,12 +210,13 @@ class _Dequantization(nn.Module):
         mid_channels (int): Number of channels in the intermediate layers.
         num_blocks (int): Number of residual blocks in the s and t network of
             `Coupling` layers.
+        use_attn (bool): Use attention in the coupling layers.
         drop_prob (float): Dropout probability.
         num_flows (int): Number of InvConv+MLCoupling flows to use.
         aux_channels (int): Number of channels in auxiliary input to couplings.
         num_components (int): Number of components in the mixture.
     """
-    def __init__(self, in_shape, mid_channels, num_blocks, drop_prob,
+    def __init__(self, in_shape, mid_channels, num_blocks, use_attn, drop_prob,
                  num_flows=4, aux_channels=32, num_components=32):
         super(_Dequantization, self).__init__()
         in_channels, in_height, in_width = in_shape
@@ -224,6 +232,7 @@ class _Dequantization(nn.Module):
                       InvConv(in_channels),
                       Coupling(in_channels, mid_channels, num_blocks,
                                num_components, drop_prob,
+                               use_attn=use_attn,
                                aux_channels=aux_channels),
                       Flip()]
         self.flows = nn.ModuleList(flows)

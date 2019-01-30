@@ -13,13 +13,14 @@ class Coupling(nn.Module):
         num_blocks (int): Number of residual blocks in the transformation network.
         num_components (int): Number of components in the mixture.
         drop_prob (float): Dropout probability.
+        use_attn (bool): Use attention in the NN blocks.
         aux_channels (int): Number of channels in optional auxiliary input.
     """
     def __init__(self, in_channels, mid_channels, num_blocks, num_components, drop_prob,
-                 aux_channels=None):
+                 use_attn=True, aux_channels=None):
         super(Coupling, self).__init__()
 
-        self.nn = NN(in_channels, mid_channels, num_blocks, num_components, drop_prob, aux_channels)
+        self.nn = NN(in_channels, mid_channels, num_blocks, num_components, drop_prob, use_attn, aux_channels)
 
     def forward(self, x, sldj=None, reverse=False, aux=None):
         x_change, x_id = x

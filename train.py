@@ -54,6 +54,7 @@ def main(args):
                        num_blocks=args.num_blocks,
                        num_dequant_blocks=args.num_dequant_blocks,
                        num_components=args.num_components,
+                       use_attn=args.use_attn,
                        drop_prob=args.drop_prob)
     net = net.to(device)
     if device == 'cuda':
@@ -184,6 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume', type=str2bool, default=False, help='Resume from checkpoint')
     parser.add_argument('--seed', type=int, default=0, help='Random seed for reproducibility')
     parser.add_argument('--save_dir', type=str, default='samples', help='Directory for saving samples')
+    parser.add_argument('--use_attn', type=str2bool, default=True, help='Use attention in the coupling layers')
     parser.add_argument('--warm_up', type=int, default=200, help='Number of batches for LR warmup')
     parser.add_argument('--weight_decay', default=5e-5, type=float,
                         help='L2 regularization (only applied to the weight norm scale factors)')

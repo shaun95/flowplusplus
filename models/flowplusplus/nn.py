@@ -26,13 +26,14 @@ class NN(nn.Module):
         num_blocks (int): Number of blocks in the network.
         num_components (int): Number of components in the mixture.
         drop_prob (float): Dropout probability.
+        use_attn (bool): Use attention in each block.
         aux_channels (int): Number of channels in optional auxiliary input.
     """
-    def __init__(self, in_channels, num_channels, num_blocks, num_components, drop_prob, aux_channels=None):
+    def __init__(self, in_channels, num_channels, num_blocks, num_components, drop_prob, use_attn=True, aux_channels=None):
         super(NN, self).__init__()
         self.k = num_components  # k = number of mixture components
         self.in_conv = WNConv2d(in_channels, num_channels, kernel_size=3, padding=1)
-        self.mid_convs = nn.ModuleList([ConvAttnBlock(num_channels, drop_prob, aux_channels)
+        self.mid_convs = nn.ModuleList([ConvAttnBlock(num_channels, drop_prob, use_attn, aux_channels)
                                         for _ in range(num_blocks)])
         self.out_conv = WNConv2d(num_channels, in_channels * (2 + 3 * self.k),
                                  kernel_size=3, padding=1)
@@ -56,20 +57,24 @@ class NN(nn.Module):
 
 
 class ConvAttnBlock(nn.Module):
-    def __init__(self, num_channels, drop_prob, aux_channels):
+    def __init__(self, num_channels, drop_prob, use_attn, aux_channels):
         super(ConvAttnBlock, self).__init__()
         self.conv = GatedConv(num_channels, drop_prob, aux_channels)
         self.norm_1 = nn.LayerNorm(num_channels)
-        self.attn = GatedAttn(num_channels, drop_prob=drop_prob)
-        self.norm_2 = nn.LayerNorm(num_channels)
+        if use_attn:
+            self.attn = GatedAttn(num_channels, drop_prob=drop_prob)
+            self.norm_2 = nn.LayerNorm(num_channels)
+        else:
+            self.attn = None
 
     def forward(self, x, aux=None):
         x = self.conv(x, aux) + x
         x = x.permute(0, 2, 3, 1)  # (b, h, w, c)
         x = self.norm_1(x)
 
-        x = self.attn(x) + x
-        x = self.norm_2(x)
+        if self.attn:
+            x = self.attn(x) + x
+            x = self.norm_2(x)
         x = x.permute(0, 3, 1, 2)  # (b, c, h, w)
 
         return x
