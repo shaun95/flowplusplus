@@ -7,6 +7,7 @@ from models.flowplusplus.act_norm import ActNorm
 from models.flowplusplus.inv_conv import InvConv
 from models.flowplusplus.nn import GatedConv
 from models.flowplusplus.coupling import Coupling
+from time import time
 from util import channelwise, checkerboard, Flip, safe_log, squeeze, unsqueeze
 
 
@@ -187,10 +188,16 @@ class _FlowStep(nn.Module):
                 x = channelwise(x, reverse=True)
 
             if self.checkers:
+                check = time()
                 x = checkerboard(x)
+                print('Checker (Fwd): {}'.format(time() - check))
+                f = time()
                 for flow in self.checkers:
                     x, sldj = flow(x, sldj, reverse)
+                print('Flows: {}'.format(time() - f))
+                check = time()
                 x = checkerboard(x, reverse=True)
+                print('Checker (Rev): {}'.format(time() - check))
 
             if self.next is not None:
                 x = squeeze(x)
