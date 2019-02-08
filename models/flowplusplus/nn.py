@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from torch.nn.utils import weight_norm
-from util import concat_elu, WNConv2d
+from util import concat_elu, LayerNorm, WNConv2d
 
 
 class NN(nn.Module):
@@ -60,22 +60,20 @@ class ConvAttnBlock(nn.Module):
     def __init__(self, num_channels, drop_prob, use_attn, aux_channels):
         super(ConvAttnBlock, self).__init__()
         self.conv = GatedConv(num_channels, drop_prob, aux_channels)
-        self.norm_1 = nn.LayerNorm(num_channels)
+        self.norm_1 = LayerNorm(num_channels)
         if use_attn:
             self.attn = GatedAttn(num_channels, drop_prob=drop_prob)
-            self.norm_2 = nn.LayerNorm(num_channels)
+            self.norm_2 = LayerNorm(num_channels)
         else:
             self.attn = None
 
     def forward(self, x, aux=None):
         x = self.conv(x, aux) + x
-        x = x.permute(0, 2, 3, 1)  # (b, h, w, c)
         x = self.norm_1(x)
 
         if self.attn:
             x = self.attn(x) + x
             x = self.norm_2(x)
-        x = x.permute(0, 3, 1, 2)  # (b, c, h, w)
 
         return x
 
@@ -100,12 +98,12 @@ class GatedAttn(nn.Module):
         self.num_heads = num_heads
         self.drop_prob = drop_prob
         self.in_proj = weight_norm(nn.Linear(d_model, 3 * d_model, bias=False))
-        self.gate = weight_norm(nn.Linear(d_model, 2 * d_model))
+        self.gate = WNConv2d(d_model, 2 * d_model, kernel_size=1, padding=0)
 
     def forward(self, x):
         # Flatten and encode position
-        b, h, w, c = x.size()
-        x = x.view(b, h * w, c)
+        b, c, h, w = x.size()
+        x = x.permute(0, 2, 3, 1).view(b, h * w, c)
         _, seq_len, num_channels = x.size()
         pos_encoding = self.get_pos_enc(seq_len, num_channels, x.device)
         x = x + pos_encoding
@@ -121,10 +119,10 @@ class GatedAttn(nn.Module):
         q *= key_depth_per_head ** -0.5
         x = self.dot_product_attention(q, k, v)
         x = self.combine_last_two_dim(x.permute(0, 2, 1, 3))
-        x = x.transpose(1, 2).view(b, c, h, w).permute(0, 2, 3, 1)  # (b, h, w, c)
+        x = x.transpose(1, 2).view(b, c, h, w)
 
         x = self.gate(x)
-        a, b = x.chunk(2, dim=-1)
+        a, b = x.chunk(2, dim=1)
         x = a * torch.sigmoid(b)
 
         return x

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 
@@ -46,5 +47,21 @@ class WNConv2d(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
+
+        return x
+
+
+class LayerNorm(nn.Module):
+    """Layer Normalization over the channel dimension of a 2D input."""
+    def __init__(self, num_channels):
+        super(LayerNorm, self).__init__()
+        self.g = nn.Parameter(torch.ones(num_channels))
+        self.b = nn.Parameter(torch.zeros(num_channels))
+        self.eps = 1e-5
+
+    def forward(self, x):
+        u = x.mean(1, keepdim=True)
+        s = ((x - u) ** 2).mean(1, keepdim=True)
+        x = (x - u) * (s + self.eps).rsqrt() * self.g + self.b
 
         return x
